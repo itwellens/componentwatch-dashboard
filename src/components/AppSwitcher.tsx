@@ -34,6 +34,19 @@ export default function AppSwitcher() {
       >
         Engineering
       </NavLink>
+      <NavLink
+        to="/sff-library"
+        className={({ isActive }) =>
+          [
+            'rounded-md px-3 py-1 text-sm font-medium transition-colors',
+            isActive
+              ? 'bg-surface text-ink shadow-sm'
+              : 'text-ink-muted hover:text-ink',
+          ].join(' ')
+        }
+      >
+        SFF Library
+      </NavLink>
     </nav>
   )
 }

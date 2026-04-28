@@ -3,6 +3,7 @@ import { SignedIn, SignedOut } from '@clerk/clerk-react'
 import SignInPage from './pages/SignInPage'
 import EngineeringPage from './pages/EngineeringPage'
 import PCBuildsPage from './pages/PCBuildsPage'
+import SFFLibraryPage from './pages/SFFLibraryPage'
 import ProtectedLayout from './components/ProtectedLayout'
 
 /**
@@ -37,6 +38,7 @@ export default function App() {
         <Route path="/" element={<Navigate to="/pc-builds" replace />} />
         <Route path="/engineering" element={<EngineeringPage />} />
         <Route path="/pc-builds" element={<PCBuildsPage />} />
+        <Route path="/sff-library" element={<SFFLibraryPage />} />
       </Route>
 
       {/* Unknown route → go home */}

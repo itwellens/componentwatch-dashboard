@@ -5,6 +5,7 @@ import EngineeringPage from './pages/EngineeringPage'
 import PCBuildsPage from './pages/PCBuildsPage'
 import SFFLibraryPage from './pages/SFFLibraryPage'
 import ProtectedLayout from './components/ProtectedLayout'
+import PublicLayout from './components/PublicLayout'
 
 /**
  * Route structure:
@@ -38,6 +39,10 @@ export default function App() {
         <Route path="/" element={<Navigate to="/pc-builds" replace />} />
         <Route path="/engineering" element={<EngineeringPage />} />
         <Route path="/pc-builds" element={<PCBuildsPage />} />
+      </Route>
+
+      {/* Public SFF Library — accessible without sign-in */}
+      <Route element={<PublicLayout />}>
         <Route path="/sff-library" element={<SFFLibraryPage />} />
       </Route>
 

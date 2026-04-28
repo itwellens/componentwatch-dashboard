@@ -1,5 +1,4 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { useAuth } from '@clerk/clerk-react'
 import { apiFetch, ApiError } from '../lib/api'
 
 // ---------------------------------------------------------------------------
@@ -48,6 +47,32 @@ interface BenchmarkRow {
   max_power_w: number | null
 }
 
+interface ComponentPrice {
+  normalized_name: string | null
+  price: number | null
+  retailer: string | null
+}
+
+interface Analysis {
+  cpu_score_per_watt: number | null
+  gpu_fps_per_watt: number | null
+  cpu_temp_headroom_c: number | null
+  gpu_temp_headroom_c: number | null
+  cb23_multi: number | null
+  heaven_1080p_fps: number | null
+  cpu_power_w: number | null
+  gpu_power_w: number | null
+  cb23_percentile: number | null
+  heaven_percentile: number | null
+}
+
+interface Prices {
+  cpu: ComponentPrice
+  gpu: ComponentPrice
+  total_tracked: number | null
+  components_priced: number
+}
+
 interface BuildDetail {
   build: {
     id: number
@@ -68,6 +93,8 @@ interface BuildDetail {
   }
   thermals: ThermalRow[]
   benchmarks: Record<string, BenchmarkRow[]>
+  analysis: Analysis
+  prices: Prices
 }
 
 // ---------------------------------------------------------------------------
@@ -95,8 +122,28 @@ function StatBadge({ label, value }: { label: string; value: string }) {
 // Detail panel
 // ---------------------------------------------------------------------------
 
-function BuildDetailPanel({ detail }: { detail: BuildDetail }) {
-  const { build, thermals, benchmarks } = detail
+function PercentileBar({ value }: { value: number }) {
+  const color = value >= 75 ? 'bg-green-500' : value >= 40 ? 'bg-accent' : 'bg-amber-400'
+  return (
+    <div className="flex items-center gap-2">
+      <div className="flex-1 h-1.5 rounded-full bg-surface-alt overflow-hidden">
+        <div className={`h-full rounded-full ${color}`} style={{ width: `${value}%` }} />
+      </div>
+      <span className="text-xs text-ink-muted tabular-nums w-10 text-right">
+        top {100 - value}%
+      </span>
+    </div>
+  )
+}
+
+function BuildDetailPanel({
+  detail,
+  onCompare,
+}: {
+  detail: BuildDetail
+  onCompare: (type: 'cpu' | 'gpu', name: string) => void
+}) {
+  const { build, thermals, benchmarks, analysis, prices } = detail
 
   const componentRows = [
     ['Case',        `${build.case_name}${build.volume_liters ? ` (${build.volume_liters}L)` : ''}`],
@@ -139,6 +186,169 @@ function BuildDetailPanel({ detail }: { detail: BuildDetail }) {
           ))}
         </dl>
       </div>
+
+      {/* Performance analysis */}
+      {(analysis.cb23_multi || analysis.heaven_1080p_fps) && (
+        <div>
+          <h3 className="text-xs font-semibold uppercase tracking-wide text-ink-muted mb-3">
+            Performance Analysis
+          </h3>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+
+            {/* CPU */}
+            {analysis.cb23_multi && (
+              <div className="rounded-lg border border-line bg-surface-alt p-3 space-y-2">
+                <p className="text-xs font-medium text-ink-muted">CPU — Cinebench R23</p>
+                <div className="flex items-baseline gap-1.5">
+                  <span className="text-xl font-semibold text-ink tabular-nums">
+                    {analysis.cb23_multi.toLocaleString()}
+                  </span>
+                  <span className="text-xs text-ink-muted">pts multi-core</span>
+                </div>
+                {analysis.cb23_percentile != null && (
+                  <PercentileBar value={analysis.cb23_percentile} />
+                )}
+                <div className="flex gap-4 text-xs text-ink-muted pt-1">
+                  {analysis.cpu_score_per_watt != null && (
+                    <span>
+                      <span className="font-medium text-ink">{analysis.cpu_score_per_watt}</span>
+                      {' '}pts/w
+                    </span>
+                  )}
+                  {analysis.cpu_power_w != null && (
+                    <span>
+                      <span className="font-medium text-ink">{analysis.cpu_power_w}w</span>
+                      {' '}peak
+                    </span>
+                  )}
+                  {analysis.cpu_temp_headroom_c != null && (
+                    <span>
+                      <span className={`font-medium ${analysis.cpu_temp_headroom_c < 5 ? 'text-red-600' : 'text-ink'}`}>
+                        {analysis.cpu_temp_headroom_c}°C
+                      </span>
+                      {' '}headroom
+                    </span>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* GPU */}
+            {analysis.heaven_1080p_fps && (
+              <div className="rounded-lg border border-line bg-surface-alt p-3 space-y-2">
+                <p className="text-xs font-medium text-ink-muted">GPU — Heaven 1080p</p>
+                <div className="flex items-baseline gap-1.5">
+                  <span className="text-xl font-semibold text-ink tabular-nums">
+                    {analysis.heaven_1080p_fps.toFixed(1)}
+                  </span>
+                  <span className="text-xs text-ink-muted">FPS</span>
+                </div>
+                {analysis.heaven_percentile != null && (
+                  <PercentileBar value={analysis.heaven_percentile} />
+                )}
+                <div className="flex gap-4 text-xs text-ink-muted pt-1">
+                  {analysis.gpu_fps_per_watt != null && (
+                    <span>
+                      <span className="font-medium text-ink">{analysis.gpu_fps_per_watt}</span>
+                      {' '}fps/w
+                    </span>
+                  )}
+                  {analysis.gpu_power_w != null && (
+                    <span>
+                      <span className="font-medium text-ink">{analysis.gpu_power_w}w</span>
+                      {' '}peak
+                    </span>
+                  )}
+                  {analysis.gpu_temp_headroom_c != null && (
+                    <span>
+                      <span className={`font-medium ${analysis.gpu_temp_headroom_c < 5 ? 'text-red-600' : 'text-ink'}`}>
+                        {analysis.gpu_temp_headroom_c}°C
+                      </span>
+                      {' '}headroom
+                    </span>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Component prices */}
+      {(prices.cpu.price || prices.gpu.price) && (
+        <div>
+          <h3 className="text-xs font-semibold uppercase tracking-wide text-ink-muted mb-3">
+            Current Prices
+            <span className="ml-2 normal-case font-normal text-ink-faint">
+              from your tracked components
+            </span>
+          </h3>
+          <div className="space-y-2">
+            {prices.cpu.normalized_name && (
+              <div className="flex items-center justify-between text-xs mb-1">
+                <button
+                  onClick={() => onCompare('cpu', prices.cpu.normalized_name!)}
+                  className="text-accent hover:underline"
+                >
+                  Compare {prices.cpu.normalized_name} across cases →
+                </button>
+              </div>
+            )}
+            {prices.cpu.price != null && (
+              <div className="flex items-center justify-between text-sm">
+                <div>
+                  <span className="text-ink-muted text-xs uppercase mr-2">CPU</span>
+                  <span className="text-ink">{prices.cpu.normalized_name}</span>
+                </div>
+                <div className="text-right">
+                  <span className="font-semibold text-ink tabular-nums">
+                    ${prices.cpu.price.toFixed(2)}
+                  </span>
+                  {prices.cpu.retailer && (
+                    <span className="text-xs text-ink-muted ml-1">@ {prices.cpu.retailer}</span>
+                  )}
+                </div>
+              </div>
+            )}
+            {prices.gpu.normalized_name && (
+              <div className="flex items-center justify-between text-xs mb-1 mt-2">
+                <button
+                  onClick={() => onCompare('gpu', prices.gpu.normalized_name!)}
+                  className="text-accent hover:underline"
+                >
+                  Compare {prices.gpu.normalized_name} across cases →
+                </button>
+              </div>
+            )}
+            {prices.gpu.price != null && (
+              <div className="flex items-center justify-between text-sm">
+                <div>
+                  <span className="text-ink-muted text-xs uppercase mr-2">GPU</span>
+                  <span className="text-ink">{prices.gpu.normalized_name}</span>
+                </div>
+                <div className="text-right">
+                  <span className="font-semibold text-ink tabular-nums">
+                    ${prices.gpu.price.toFixed(2)}
+                  </span>
+                  {prices.gpu.retailer && (
+                    <span className="text-xs text-ink-muted ml-1">@ {prices.gpu.retailer}</span>
+                  )}
+                </div>
+              </div>
+            )}
+            {prices.total_tracked != null && prices.components_priced > 1 && (
+              <div className="flex items-center justify-between text-sm border-t border-line pt-2 mt-2">
+                <span className="text-ink-muted">
+                  Tracked total ({prices.components_priced} components)
+                </span>
+                <span className="font-semibold text-ink tabular-nums">
+                  ${prices.total_tracked.toFixed(2)}
+                </span>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Thermals */}
       {thermals.length > 0 && (
@@ -254,6 +464,113 @@ function BuildDetailPanel({ detail }: { detail: BuildDetail }) {
 }
 
 // ---------------------------------------------------------------------------
+// Component comparison panel
+// ---------------------------------------------------------------------------
+
+interface ComponentBuild {
+  id: number
+  case_name: string
+  volume_liters: number | null
+  cpu: string | null
+  gpu: string | null
+  ambient_temp_c: number | null
+  headline_score: number | null
+  headline_fps: number | null
+  stress_max_c: number | null
+  stress_power_w: number | null
+}
+
+function ComponentComparisonPanel({
+  type,
+  name,
+  onClose,
+  onSelectBuild,
+}: {
+  type: 'cpu' | 'gpu'
+  name: string
+  onClose: () => void
+  onSelectBuild: (id: number) => void
+}) {
+  const [builds, setBuilds] = useState<ComponentBuild[]>([])
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    setLoading(true)
+    apiFetch<{ builds: ComponentBuild[] }>(
+      `/api/sff/by-component?type=${type}&name=${encodeURIComponent(name)}`
+    )
+      .then(d => setBuilds(d.builds))
+      .catch(() => {})
+      .finally(() => setLoading(false))
+  }, [type, name])
+
+  const isCPU = type === 'cpu'
+  const metricLabel = isCPU ? 'CB23 Multi' : 'Heaven 1080p'
+
+  return (
+    <div className="rounded-xl border border-accent/30 bg-surface p-5 space-y-4">
+      <div className="flex items-center justify-between">
+        <div>
+          <p className="text-xs text-ink-muted uppercase tracking-wide font-medium">
+            {isCPU ? 'CPU' : 'GPU'} comparison
+          </p>
+          <h3 className="font-semibold text-ink">{name}</h3>
+          {!loading && (
+            <p className="text-xs text-ink-muted">{builds.length} build{builds.length !== 1 ? 's' : ''} in library</p>
+          )}
+        </div>
+        <button onClick={onClose} className="text-ink-muted hover:text-ink text-lg leading-none">✕</button>
+      </div>
+
+      {loading ? (
+        <p className="text-sm text-ink-muted text-center py-4">Loading…</p>
+      ) : builds.length === 0 ? (
+        <p className="text-sm text-ink-muted text-center py-4">No other builds found with this component.</p>
+      ) : (
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="text-left text-xs text-ink-muted border-b border-line">
+              <th className="pb-2 font-medium">Case</th>
+              <th className="pb-2 font-medium text-right">{metricLabel}</th>
+              <th className="pb-2 font-medium text-right">Stress°</th>
+              <th className="pb-2 font-medium text-right">Watts</th>
+            </tr>
+          </thead>
+          <tbody>
+            {builds.map(b => {
+              const score = isCPU
+                ? b.headline_score?.toLocaleString() ?? '—'
+                : b.headline_fps?.toFixed(1) ?? '—'
+              return (
+                <tr
+                  key={b.id}
+                  onClick={() => onSelectBuild(b.id)}
+                  className="border-b border-line/50 last:border-0 cursor-pointer hover:bg-surface-alt transition-colors"
+                >
+                  <td className="py-2 pr-3">
+                    <p className="text-ink">{b.case_name}</p>
+                    {b.volume_liters && (
+                      <p className="text-xs text-ink-muted">{b.volume_liters}L</p>
+                    )}
+                  </td>
+                  <td className="py-2 text-right tabular-nums font-medium text-ink">{score}</td>
+                  <td className="py-2 text-right tabular-nums text-ink-muted">
+                    {b.stress_max_c != null ? `${b.stress_max_c}°` : '—'}
+                  </td>
+                  <td className="py-2 text-right tabular-nums text-ink-muted">
+                    {b.stress_power_w != null ? `${b.stress_power_w}w` : '—'}
+                  </td>
+                </tr>
+              )
+            })}
+          </tbody>
+        </table>
+      )}
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
 // Build card
 // ---------------------------------------------------------------------------
 
@@ -311,7 +628,6 @@ function BuildCard({
 const PAGE_SIZE = 30
 
 export default function SFFLibraryPage() {
-  const { getToken } = useAuth()
 
   const [cases, setCases] = useState<SFFCase[]>([])
   const [builds, setBuilds] = useState<BuildSummary[]>([])
@@ -325,6 +641,7 @@ export default function SFFLibraryPage() {
   const [selectedBuildId, setSelectedBuildId] = useState<number | null>(null)
   const [detail, setDetail] = useState<BuildDetail | null>(null)
   const [loadingDetail, setLoadingDetail] = useState(false)
+  const [comparison, setComparison] = useState<{ type: 'cpu' | 'gpu'; name: string } | null>(null)
 
   const [loading, setLoading] = useState(true)
   const [loadingMore, setLoadingMore] = useState(false)
@@ -335,10 +652,10 @@ export default function SFFLibraryPage() {
 
   // Fetch cases once
   useEffect(() => {
-    apiFetch<{ cases: SFFCase[] }>('/api/sff/cases', { getToken })
+    apiFetch<{ cases: SFFCase[] }>('/api/sff/cases', {})
       .then(d => setCases(d.cases))
       .catch(() => {})
-  }, [getToken])
+  }, [])
 
   const fetchBuilds = useCallback(async (
     newOffset: number,
@@ -356,7 +673,7 @@ export default function SFFLibraryPage() {
 
       const data = await apiFetch<{ builds: BuildSummary[]; total: number }>(
         `/api/sff/builds?${params}`,
-        { getToken },
+        {},
       )
       setBuilds(prev => append ? [...prev, ...data.builds] : data.builds)
       setTotal(data.total)
@@ -366,7 +683,7 @@ export default function SFFLibraryPage() {
     } finally {
       append ? setLoadingMore(false) : setLoading(false)
     }
-  }, [getToken, selectedCaseId, benchmarksOnly])
+  }, [selectedCaseId, benchmarksOnly])
 
   // Refetch when filters change
   useEffect(() => {
@@ -389,11 +706,11 @@ export default function SFFLibraryPage() {
   useEffect(() => {
     if (selectedBuildId == null) { setDetail(null); return }
     setLoadingDetail(true)
-    apiFetch<BuildDetail>(`/api/sff/builds/${selectedBuildId}`, { getToken })
+    apiFetch<BuildDetail>(`/api/sff/builds/${selectedBuildId}`, {})
       .then(d => setDetail(d))
       .catch(() => setDetail(null))
       .finally(() => setLoadingDetail(false))
-  }, [selectedBuildId, getToken])
+  }, [selectedBuildId])
 
   function handleSelectBuild(id: number) {
     setSelectedBuildId(prev => prev === id ? null : id)
@@ -507,7 +824,25 @@ export default function SFFLibraryPage() {
                       {loadingDetail ? (
                         <p className="text-sm text-ink-muted py-4 text-center">Loading…</p>
                       ) : detail ? (
-                        <BuildDetailPanel detail={detail} />
+                        <>
+                          <BuildDetailPanel
+                            detail={detail}
+                            onCompare={(type, name) => setComparison({ type, name })}
+                          />
+                          {comparison && (
+                            <div className="mt-4">
+                              <ComponentComparisonPanel
+                                type={comparison.type}
+                                name={comparison.name}
+                                onClose={() => setComparison(null)}
+                                onSelectBuild={id => {
+                                  setComparison(null)
+                                  handleSelectBuild(id)
+                                }}
+                              />
+                            </div>
+                          )}
+                        </>
                       ) : null}
                     </div>
                   )}
